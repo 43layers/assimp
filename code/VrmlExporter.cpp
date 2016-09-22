@@ -51,6 +51,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "Exceptional.h"
 #include "ByteSwapper.h"
 
+#define INDENT_WIDTH 2
+#define PrintLine(x) mOutput << std::string(INDENT_WIDTH * mIndent, ' ') << x << endl
+#define PrintLinePush(x) PrintLine(x); PushIndent()
+#define PrintLinePop(x) PopIndent(); PrintLine(x)
+
 using namespace Assimp;
 namespace Assimp {
 
@@ -66,21 +71,96 @@ void ExportSceneVrml(const char* pFile, IOSystem* pIOSystem, const aiScene* pSce
 
 } // namespace Assimp
 
-VrmlExporter :: VrmlExporter(const char* _filename, const aiScene* pScene)
-: filename(_filename)
-, endl("\n")
+VrmlExporter::VrmlExporter(const char* _filename, const aiScene* pScene)
+  : filename(_filename)
+  , pScene(pScene)
+  , endl("\n")
 {
     const std::locale& l = std::locale("C");
     mOutput.imbue(l);
     mOutput.precision(16);
-    const std::string& name = "AssimpScene";
 
     mOutput << "#VRML V2.0 utf8" << endl;
     mOutput << "# File produced by Open Asset Import Library (http://www.assimp.sf.net)" << endl;
     mOutput << "# (assimp v" << aiGetVersionMajor() << '.' << aiGetVersionMinor() << '.' << aiGetVersionRevision() << ")" << endl  << endl;
 
+    mOutput << "NavigationInfo {" << endl << "  type [ \"EXAMINE\", \"ANY\"]" << endl << '}' << endl;
 
-    
+    AddNode(pScene->mRootNode, aiMatrix4x4());
+}
+
+void VrmlExporter::PushIndent() {
+  mIndent += 1;
+}
+
+void VrmlExporter::PopIndent() {
+  if (mIndent == 0) return;
+  mIndent -= 1;
+}
+
+void VrmlExporter::AddMesh(const aiMesh* mesh, const aiMatrix4x4& transform) {
+  PrintLinePush("Transform {");
+  PrintLinePush("children [");
+  PrintLinePush("Shape {");
+
+  {
+    PrintLinePush("appearance Appearance {");
+    {
+      // Material?
+      // mOutput << "material Material {" << endl;
+      // mOutput << "} # material" << endl;
+    }
+    {
+      std::string texUrl = "TODO";
+      PrintLine("texture ImageTexture { url \"" << texUrl << "\" }");
+    }
+    PrintLinePop("} # appearance");
+  }
+
+  {
+    PrintLinePush("geometry IndexedFaceSet {");
+    PrintLine("solid TRUE");
+    {
+      PrintLinePush("coord Coordinate {");
+      PrintLinePush("point [");
+      //TODO
+      PrintLinePop("] # point");
+      PrintLinePop("} # coord Coordinate");
+    }
+    {
+      PrintLinePush("coordIndex [");
+      //TODO
+      PrintLinePop("] # coordIndex");
+    }
+    {
+      PrintLinePush("texCoord TextureCoordinate {");
+      PrintLinePush("point [");
+      //TODO
+      PrintLinePop("] # point");
+      PrintLinePop("} # texCoord TextureCoordinate");
+    }
+    {
+      PrintLinePush("texCoordIndex [");
+      //TODO
+      PrintLinePop("] # texCoordIndex");
+    }
+
+    PrintLinePop("} # geometry IndexedFaceSet");
+  }
+
+  PrintLinePop("} # Shape");
+  PrintLinePop("] # children");
+  PrintLinePop("} # Transform");
+}
+
+void VrmlExporter::AddNode(const aiNode* node, const aiMatrix4x4& transform) {
+  const aiMatrix4x4& newTransform = transform * node->mTransformation;
+  for (size_t i = 0; i < node->mNumMeshes; ++i) {
+    AddMesh(pScene->mMeshes[node->mMeshes[i]], newTransform);
+  }
+  for (size_t i = 0; i < node->mNumChildren; ++i) {
+    AddNode(node->mChildren[i], newTransform);
+  }
 }
 
 #endif

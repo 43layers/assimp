@@ -69,7 +69,16 @@ public:
     /// public stringstreams to write all output into
     std::ostringstream mOutput;
 private:
+    void AddMesh(const aiMesh* mesh, const aiMatrix4x4& transform);
+    void AddNode(const aiNode* node, const aiMatrix4x4& transform);
+
+    void PushIndent();
+    void PopIndent();
+    
+    unsigned int mIndent = 0;
+
     const std::string filename;
+    const aiScene* const pScene;
     // this endl() doesn't flush() the stream
     const std::string endl;
 };
