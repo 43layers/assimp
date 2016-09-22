@@ -52,7 +52,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ByteSwapper.h"
 
 #define INDENT_WIDTH 2
-#define PrintLine(x) mOutput << std::string(INDENT_WIDTH * mIndent, ' ') << x << endl
+#define Indent(x) std::string(INDENT_WIDTH * x, ' ')
+#define PrintLine(x) mOutput << Indent(mIndent) << x << endl
 #define PrintLinePush(x) PrintLine(x); PushIndent()
 #define PrintLinePop(x) PopIndent(); PrintLine(x)
 
@@ -105,12 +106,12 @@ void VrmlExporter::AddMesh(const aiMesh* mesh, const aiMatrix4x4& transform) {
 
   {
     PrintLinePush("appearance Appearance {");
-    {
+    if (false) {
       // Material?
-      // mOutput << "material Material {" << endl;
-      // mOutput << "} # material" << endl;
+      mOutput << "material Material {" << endl;
+      mOutput << "} # material" << endl;
     }
-    {
+    if (false) {
       std::string texUrl = "TODO";
       PrintLine("texture ImageTexture { url \"" << texUrl << "\" }");
     }
@@ -123,23 +124,34 @@ void VrmlExporter::AddMesh(const aiMesh* mesh, const aiMatrix4x4& transform) {
     {
       PrintLinePush("coord Coordinate {");
       PrintLinePush("point [");
-      //TODO
+      for (size_t i = 0; i < mesh->mNumVertices; ++i) {
+        const aiVector3D v = transform * mesh->mVertices[i];
+        PrintLine(v.x << " " << v.y << " " << v.z << ',');
+      }
       PrintLinePop("] # point");
       PrintLinePop("} # coord Coordinate");
     }
     {
       PrintLinePush("coordIndex [");
-      //TODO
+      for (size_t i = 0; i < mesh->mNumFaces; ++i) {
+        const aiFace& face = mesh->mFaces[i];
+        if (face.mNumIndices < 3) continue;
+        mOutput << Indent(mIndent);
+        for (size_t j = 0; j < face.mNumIndices; j++) {
+          mOutput << face.mIndices[j] << ',';
+        }
+        mOutput << "-1," << endl;
+      }
       PrintLinePop("] # coordIndex");
     }
-    {
+    if (false) {
       PrintLinePush("texCoord TextureCoordinate {");
       PrintLinePush("point [");
       //TODO
       PrintLinePop("] # point");
       PrintLinePop("} # texCoord TextureCoordinate");
     }
-    {
+    if (false) {
       PrintLinePush("texCoordIndex [");
       //TODO
       PrintLinePop("] # texCoordIndex");
