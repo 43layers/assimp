@@ -624,6 +624,13 @@ SET( Step_SRCS
 )
 SOURCE_GROUP( Step FILES ${Step_SRCS})
 
+SET( Vrml_SRCS
+  VrmlExporter.h
+  VrmlExporter.cpp
+)
+SOURCE_GROUP( Vrml FILES ${Vrml_SRCS})
+
+
 SET( Exporter_SRCS
   Exporter.cpp
   AssimpCExport.cpp
@@ -735,6 +742,7 @@ SET( assimp_src
   ${PostProcessing_SRCS}
   ${MaterialSystem_SRCS}
   ${Step_SRCS}
+  ${Vrml_SRCS}
 
   # Model Support
   ${ASSIMP_LOADER_SRCS}
