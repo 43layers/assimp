@@ -157,7 +157,7 @@ Exporter::ExportFormatEntry gExporters[] =
 #ifndef ASSIMP_BUILD_NO_VRML_EXPORTER
     Exporter::ExportFormatEntry( "vrml", "VRML 2.0 World File", "wrl", &ExportSceneVrml,
         aiProcess_JoinIdenticalVertices
-    )
+    ),
 #endif
 
 #ifndef ASSIMP_BUILD_NO_X3D_EXPORTER
