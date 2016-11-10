@@ -40,16 +40,20 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 
-#if !defined(ASSIMP_BUILD_NO_EXPORT) && !defined(ASSIMP_BUILD_NO_VRML_EXPORTER)
+#ifndef ASSIMP_BUILD_NO_EXPORT
+#ifndef ASSIMP_BUILD_NO_VRML_EXPORTER
+
+#include <iostream>
 
 #include "VrmlExporter.h"
+#include "Exceptional.h"
+#include "StringComparison.h"
 #include <assimp/version.h>
 #include <assimp/IOSystem.hpp>
-#include <assimp/scene.h>
 #include <assimp/Exporter.hpp>
+#include <assimp/material.h>
+#include <assimp/scene.h>
 #include <memory>
-#include "Exceptional.h"
-#include "ByteSwapper.h"
 
 #define INDENT_WIDTH 2
 #define Indent(x) std::string(INDENT_WIDTH * x, ' ')
@@ -58,121 +62,231 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define PrintLinePop(x) PopIndent(); PrintLine(x)
 
 using namespace Assimp;
-namespace Assimp {
+namespace Assimp    {
 
-void ExportSceneVrml(const char* pFile, IOSystem* pIOSystem, const aiScene* pScene, const ExportProperties* pProperties)
+// ------------------------------------------------------------------------------------------------
+// Worker function for exporting a scene to Wavefront OBJ. Prototyped and registered in Exporter.cpp
+void ExportSceneVrml(const char* pFile,IOSystem* pIOSystem, const aiScene* pScene, const ExportProperties* pProperties)
 {
-  VrmlExporter exporter(pFile, pScene);
-  std::unique_ptr<IOStream> outfile(pIOSystem->Open(pFile, "wt"));
-  if (outfile == NULL) {
-    throw DeadlyExportError("Could not open output .wrl file: " + std::string(pFile));
-  }
-  outfile->Write(exporter.mOutput.str().c_str(), static_cast<size_t>(exporter.mOutput.tellp()), 1);
+    // invoke the exporter
+    VrmlExporterV2 exporter(pFile, pScene);
+
+    // we're still here - export successfully completed. Write both the main OBJ file and the material script
+    std::unique_ptr<IOStream> outfile (pIOSystem->Open(pFile,"wt"));
+    if(outfile == NULL) {
+        throw DeadlyExportError("could not open output .obj file: " + std::string(pFile));
+    }
+    outfile->Write( exporter.mOutput.str().c_str(), static_cast<size_t>(exporter.mOutput.tellp()),1);
 }
 
 } // namespace Assimp
 
-VrmlExporter::VrmlExporter(const char* _filename, const aiScene* pScene)
-  : filename(_filename)
-  , pScene(pScene)
-  , endl("\n")
+static const std::string MaterialExt = ".mtl";
+
+// ------------------------------------------------------------------------------------------------
+VrmlExporterV2::VrmlExporterV2(const char* _filename, const aiScene* pScene)
+: filename(_filename)
+, pScene(pScene)
+, endl("\n")
 {
+    // make sure that all formatting happens using the standard, C locale and not the user's current locale
     const std::locale& l = std::locale("C");
     mOutput.imbue(l);
     mOutput.precision(16);
 
-    mOutput << "#VRML V2.0 utf8" << endl;
-    mOutput << "# File produced by Open Asset Import Library (http://www.assimp.sf.net)" << endl;
-    mOutput << "# (assimp v" << aiGetVersionMajor() << '.' << aiGetVersionMinor() << '.' << aiGetVersionRevision() << ")" << endl  << endl;
-
-    mOutput << "NavigationInfo {" << endl << "  type [ \"EXAMINE\", \"ANY\"]" << endl << '}' << endl;
-
-    AddNode(pScene->mRootNode, aiMatrix4x4());
+    WriteFile();
 }
 
-void VrmlExporter::PushIndent() {
+void VrmlExporterV2::PushIndent() {
   mIndent += 1;
 }
 
-void VrmlExporter::PopIndent() {
+void VrmlExporterV2::PopIndent() {
   if (mIndent == 0) return;
   mIndent -= 1;
 }
 
-void VrmlExporter::AddMesh(const aiMesh* mesh, const aiMatrix4x4& transform) {
-  PrintLinePush("Transform {");
-  PrintLinePush("children [");
-  PrintLinePush("Shape {");
 
-  {
-    PrintLinePush("appearance Appearance {");
-    if (false) {
-      // Material?
-      mOutput << "material Material {" << endl;
-      mOutput << "} # material" << endl;
-    }
-    if (false) {
-      std::string texUrl = "TODO";
-      PrintLine("texture ImageTexture { url \"" << texUrl << "\" }");
-    }
-    PrintLinePop("} # appearance");
-  }
+// ------------------------------------------------------------------------------------------------
+void VrmlExporterV2::WriteHeader(std::ostringstream& out)
+{
+    PrintLine("#VRML V2.0 utf8");
+    PrintLine("# File produced by Open Asset Import Library (http://www.assimp.sf.net)");
+    PrintLine("# (assimp v" << aiGetVersionMajor() << '.' << aiGetVersionMinor() << '.' << aiGetVersionRevision() << ")" << endl);
+    mOutput << "NavigationInfo {" << endl << "  type [ \"EXAMINE\", \"ANY\"]" << endl << '}' << endl;
+}
 
-  {
-    PrintLinePush("geometry IndexedFaceSet {");
-    PrintLine("solid TRUE");
-    {
-      PrintLinePush("coord Coordinate {");
-      PrintLinePush("point [");
-      for (size_t i = 0; i < mesh->mNumVertices; ++i) {
-        const aiVector3D v = transform * mesh->mVertices[i];
-        PrintLine(v.x << " " << v.y << " " << v.z << ',');
-      }
-      PrintLinePop("] # point");
-      PrintLinePop("} # coord Coordinate");
-    }
-    {
-      PrintLinePush("coordIndex [");
-      for (size_t i = 0; i < mesh->mNumFaces; ++i) {
-        const aiFace& face = mesh->mFaces[i];
-        if (face.mNumIndices < 3) continue;
-        mOutput << Indent(mIndent);
-        for (size_t j = 0; j < face.mNumIndices; j++) {
-          mOutput << face.mIndices[j] << ',';
+// ------------------------------------------------------------------------------------------------
+void VrmlExporterV2::WriteFile()
+{
+    WriteHeader(mOutput);
+
+    // collect mesh geometry
+    aiMatrix4x4 mBase;
+    AddNode(pScene->mRootNode, mBase);
+
+    // now write all mesh instances
+    for(const MeshInstance& m : meshes) {
+        PrintLinePush("Transform {");
+        PrintLinePush("children [");
+        PrintLinePush("Shape {");
+
+        // write appearance
+        if (!m.textureFilename.empty()) {
+            PrintLinePush("appearance Appearance {");
+            PrintLine("texture ImageTexture { url \"" << m.textureFilename << "\" }");
+            PrintLinePop("} # appearance");
         }
-        mOutput << "-1," << endl;
-      }
-      PrintLinePop("] # coordIndex");
-    }
-    if (false) {
-      PrintLinePush("texCoord TextureCoordinate {");
-      PrintLinePush("point [");
-      //TODO
-      PrintLinePop("] # point");
-      PrintLinePop("} # texCoord TextureCoordinate");
-    }
-    if (false) {
-      PrintLinePush("texCoordIndex [");
-      //TODO
-      PrintLinePop("] # texCoordIndex");
-    }
 
-    PrintLinePop("} # geometry IndexedFaceSet");
-  }
+        PrintLinePush("geometry IndexedFaceSet {");
+        PrintLine("solid TRUE");
+        // write geometry
+        {
 
-  PrintLinePop("} # Shape");
-  PrintLinePop("] # children");
-  PrintLinePop("} # Transform");
+          {
+            PrintLinePush("coord Coordinate {");
+            PrintLinePush("point [");
+            m.vpMap.getVectors(positionsVec);
+            for (const aiVector3D& v : positionsVec) {
+              PrintLine(v.x << " " << v.y << " " << v.z << ',');
+            }
+
+            PrintLinePop("] # point");
+            PrintLinePop("} # coord Coordinate");
+          }
+          {
+            PrintLinePush("coordIndex [");
+            for (const Face& f : m.faces) {
+              mOutput << Indent(mIndent);
+              for (const FaceVertex& fv : f.indices) {
+                mOutput << fv.vp-1 << ',' ;
+              }
+              mOutput << "-1," << endl;
+            }
+            PrintLinePop("] # coordIndex");
+          }
+        }
+        // write texture coordinates
+        m.vtMap.getVectors(texCoordsVec);
+        if (texCoordsVec.size() > 0) {
+            PrintLinePush("texCoord TextureCoordinate {");
+            PrintLinePush("point [");
+            for (const aiVector3D& v : texCoordsVec) {
+                PrintLine(v.x << " " << v.y << ",");
+            }
+            PrintLinePop("] # point");
+            PrintLinePop("} # texCoord TextureCoordinate");
+
+            PrintLinePush("texCoordIndex [");
+            for (const Face& f : m.faces) {
+              mOutput << Indent(mIndent);
+              for (const FaceVertex& fv : f.indices) {
+                mOutput << fv.vt-1 << ',';
+              }
+              mOutput << "-1," << endl;
+            }
+            PrintLinePop("] # texCoordIndex");
+        }
+        PrintLinePop("} # geometry IndexedFaceSet");
+
+        PrintLinePop("} # Shape");
+        PrintLinePop("] # children");
+        PrintLinePop("} # Transform");
+    }
 }
 
-void VrmlExporter::AddNode(const aiNode* node, const aiMatrix4x4& transform) {
-  const aiMatrix4x4& newTransform = transform * node->mTransformation;
-  for (size_t i = 0; i < node->mNumMeshes; ++i) {
-    AddMesh(pScene->mMeshes[node->mMeshes[i]], newTransform);
-  }
-  for (size_t i = 0; i < node->mNumChildren; ++i) {
-    AddNode(node->mChildren[i], newTransform);
-  }
+// ------------------------------------------------------------------------------------------------
+int VrmlExporterV2::vecIndexMap::getIndex(const aiVector3D& vec)
+{
+    vecIndexMap::dataType::iterator vertIt = vecMap.find(vec);
+    // vertex already exists, so reference it
+    if(vertIt != vecMap.end()){
+        return vertIt->second;
+    }
+    vecMap[vec] = mNextIndex;
+    int ret = mNextIndex;
+    mNextIndex++;
+    return ret;
 }
 
-#endif
+// ------------------------------------------------------------------------------------------------
+void VrmlExporterV2::vecIndexMap::getVectors( std::vector<aiVector3D>& vecs ) const
+{
+    vecs.resize(vecMap.size());
+    for(vecIndexMap::dataType::const_iterator it = vecMap.begin(); it != vecMap.end(); ++it){
+        vecs[it->second-1] = it->first;
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+void VrmlExporterV2::AddMesh(const aiString& name, const aiMesh* m, const aiMatrix4x4& mat)
+{
+    meshes.push_back(MeshInstance());
+    MeshInstance& mesh = meshes.back();
+
+    unsigned int materialIndex = m->mMaterialIndex;
+    const aiMaterial* pMaterial = pScene->mMaterials[materialIndex];
+    aiString s;
+    std::string diffuseTextureFilename;
+    if (AI_SUCCESS == pMaterial->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), s)) {
+      mesh.textureFilename = s.data;
+    }
+
+    mesh.name = std::string(name.data,name.length) + (m->mName.length ? "_" + std::string(m->mName.data,m->mName.length) : "");
+
+    mesh.faces.resize(m->mNumFaces);
+
+    for(unsigned int i = 0; i < m->mNumFaces; ++i) {
+        const aiFace& f = m->mFaces[i];
+
+        Face& face = mesh.faces[i];
+        if (f.mNumIndices != 3) continue;
+        switch (f.mNumIndices) {
+            case 1:
+                face.kind = 'p';
+                continue;
+            case 2:
+                face.kind = 'l';
+                break;
+            default:
+                face.kind = 'f';
+        }
+        face.indices.resize(f.mNumIndices);
+
+        for(unsigned int a = 0; a < f.mNumIndices; ++a) {
+            const unsigned int idx = f.mIndices[a];
+
+            aiVector3D vert = mat * m->mVertices[idx];
+            face.indices[a].vp = mesh.vpMap.getIndex(vert);
+
+            //TODO: normals support
+            face.indices[a].vn = 0;
+
+            if (m->mTextureCoords[0]) {
+                face.indices[a].vt = mesh.vtMap.getIndex(m->mTextureCoords[0][idx]);
+            }
+            else{
+                face.indices[a].vt = 0;
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+void VrmlExporterV2::AddNode(const aiNode* nd, const aiMatrix4x4& mParent)
+{
+    const aiMatrix4x4& mAbs = mParent * nd->mTransformation;
+
+    for(unsigned int i = 0; i < nd->mNumMeshes; ++i) {
+        AddMesh(nd->mName, pScene->mMeshes[nd->mMeshes[i]], mAbs);
+    }
+
+    for(unsigned int i = 0; i < nd->mNumChildren; ++i) {
+        AddNode(nd->mChildren[i], mAbs);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+
+#endif // ASSIMP_BUILD_NO_OBJ_EXPORTER
+#endif // ASSIMP_BUILD_NO_EXPORT

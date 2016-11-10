@@ -38,11 +38,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ----------------------------------------------------------------------
 */
 
-/** @file VrmlExporter.h
- * Declares the exporter class to write a scene to a VRML 2.0 WRL file
+/** @file VrmlExporterV2.h
+ * Declares the exporter class to write a scene to a Vrml2.0 file
  */
-#ifndef AI_VRMLEXPORTER_H_INC
-#define AI_VRMLEXPORTER_H_INC
+#ifndef AI_VRMLEXPORTERV2_H_INC
+#define AI_VRMLEXPORTERV2_H_INC
 
 #include <assimp/types.h>
 #include <sstream>
@@ -57,32 +57,95 @@ namespace Assimp
 {
 
 // ------------------------------------------------------------------------------------------------
-/** Helper class to export a given scene to a VRML2.0 WRL file. */
+/** Helper class to export a given scene to an VRML2.0 file. */
 // ------------------------------------------------------------------------------------------------
-class VrmlExporter
+class VrmlExporterV2
 {
 public:
     /// Constructor for a specific scene to export
-    VrmlExporter(const char* filename, const aiScene* pScene);
+    VrmlExporterV2(const char* filename, const aiScene* pScene);
 
 public:
+
     /// public stringstreams to write all output into
     std::ostringstream mOutput;
+
 private:
-    void AddMesh(const aiMesh* mesh, const aiMatrix4x4& transform);
-    void AddNode(const aiNode* node, const aiMatrix4x4& transform);
+
+    // intermediate data structures
+    struct FaceVertex
+    {
+        FaceVertex()
+            : vp(), vn(), vt()
+        {
+        }
+
+        // 0-indexed
+        unsigned int vp,vn,vt;
+    };
+
+    struct Face {
+        char kind;
+        std::vector<FaceVertex> indices;
+    };
+
+    struct aiVectorCompare
+    {
+        bool operator() (const aiVector3D& a, const aiVector3D& b) const
+        {
+            if(a.x < b.x) return true;
+            if(a.x > b.x) return false;
+            if(a.y < b.y) return true;
+            if(a.y > b.y) return false;
+            if(a.z < b.z) return true;
+            return false;
+        }
+    };
+
+    class vecIndexMap
+    {
+        int mNextIndex;
+        typedef std::map<aiVector3D, int, aiVectorCompare> dataType;
+        dataType vecMap;
+    public:
+
+        vecIndexMap():mNextIndex(1)
+        {}
+
+        int getIndex(const aiVector3D& vec);
+        void getVectors( std::vector<aiVector3D>& vecs ) const;
+    };
+
+    struct MeshInstance {
+        std::string name, textureFilename;
+        vecIndexMap vpMap, vtMap;
+        std::vector<Face> faces;
+    };
+
+    void WriteHeader(std::ostringstream& out);
+    void WriteFile();
+
+    void AddMesh(const aiString& name, const aiMesh* m, const aiMatrix4x4& mat);
+    void AddNode(const aiNode* nd, const aiMatrix4x4& mParent);
+
+private:
 
     void PushIndent();
     void PopIndent();
-    
-    unsigned int mIndent = 0;
 
     const std::string filename;
     const aiScene* const pScene;
+
+    std::vector<aiVector3D> positionsVec, texCoordsVec;
+
+    unsigned int mIndent = 0;
+
+    std::vector<MeshInstance> meshes;
+
     // this endl() doesn't flush() the stream
     const std::string endl;
 };
 
 }
 
-#endif // AI_VRMLEXPORTER_H_INC
+#endif // AI_VRMLEXPORTERV2_H_INC
