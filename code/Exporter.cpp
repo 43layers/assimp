@@ -92,6 +92,7 @@ void ExportSceneGLB(const char*, IOSystem*, const aiScene*, const ExportProperti
 void ExportSceneAssbin(const char*, IOSystem*, const aiScene*, const ExportProperties*);
 void ExportSceneAssxml(const char*, IOSystem*, const aiScene*, const ExportProperties*);
 void ExportSceneVrml(const char*, IOSystem*, const aiScene*, const ExportProperties*);
+void ExportSceneX3D(const char*, IOSystem*, const aiScene*, const ExportProperties*);
 
 // ------------------------------------------------------------------------------------------------
 // global array of all export formats which Assimp supports in its current build
@@ -140,9 +141,9 @@ Exporter::ExportFormatEntry gExporters[] =
 
 #ifndef ASSIMP_BUILD_NO_GLTF_EXPORTER
     Exporter::ExportFormatEntry( "gltf", "GL Transmission Format", "gltf", &ExportSceneGLTF,
-        aiProcess_JoinIdenticalVertices /*| aiProcess_SortByPType*/),
+        aiProcess_JoinIdenticalVertices | aiProcess_Triangulate | aiProcess_SortByPType),
     Exporter::ExportFormatEntry( "glb", "GL Transmission Format (binary)", "glb", &ExportSceneGLB,
-        aiProcess_JoinIdenticalVertices /*| aiProcess_SortByPType*/),
+        aiProcess_JoinIdenticalVertices | aiProcess_Triangulate | aiProcess_SortByPType),
 #endif
 
 #ifndef ASSIMP_BUILD_NO_ASSBIN_EXPORTER
@@ -157,6 +158,10 @@ Exporter::ExportFormatEntry gExporters[] =
     Exporter::ExportFormatEntry( "vrml", "VRML 2.0 World File", "wrl", &ExportSceneVrml,
         aiProcess_JoinIdenticalVertices
     )
+#endif
+
+#ifndef ASSIMP_BUILD_NO_X3D_EXPORTER
+	Exporter::ExportFormatEntry( "x3d", "Extensible 3D", "x3d" , &ExportSceneX3D, 0),
 #endif
 };
 
